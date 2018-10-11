@@ -38,8 +38,12 @@ public class SeleniumTest {
         }catch (Exception ex){
             ex.printStackTrace();
         }
+    }
 
-
+    @Test
+    public void getMovieLinksTest(){
+        String originUrl = "https://movie.douban.com/explore";
+        seleniumService.getMovieLinks(originUrl);
     }
 
 }

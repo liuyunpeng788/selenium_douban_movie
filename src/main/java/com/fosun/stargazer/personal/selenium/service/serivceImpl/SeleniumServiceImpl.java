@@ -5,23 +5,28 @@ import com.fosun.stargazer.personal.selenium.dto.entity.Director;
 import com.fosun.stargazer.personal.selenium.dto.entity.Movie;
 import com.fosun.stargazer.personal.selenium.dto.entity.Writer;
 import com.fosun.stargazer.personal.selenium.dto.relationship.ActorShip;
+import com.fosun.stargazer.personal.selenium.service.Neo4jService;
 import com.fosun.stargazer.personal.selenium.service.SeleniumService;
+import com.fosun.stargazer.personal.selenium.thread.MovieDetailTask;
 import com.fosun.stargazer.personal.selenium.util.CommonUtil;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Nullable;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.io.File;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,6 +34,74 @@ import java.util.regex.Pattern;
 public class SeleniumServiceImpl implements SeleniumService {
     private static Logger logger = LoggerFactory.getLogger("SeleniumServiceImpl");
 
+    @Autowired
+    private Neo4jService neo4jService;
+
+    @Override
+    public Set<String> getMovieLinks(String originUrl) {
+        WebDriver webDriver = new ChromeDriver();
+        Set<String> urlLinks = new HashSet<>();
+        try{
+            webDriver.get(originUrl);
+            webDriver.manage().timeouts().implicitlyWait(20, TimeUnit.SECONDS);
+            List<WebElement> webElements = webDriver.findElements(By.xpath("//div[@class='list-wp']//div[@class='list']//a[@class='item']"));
+            while(null != webElements){
+                webElements.parallelStream().forEach(x->{
+                    String url = x.getAttribute("href");
+                    System.out.println(url);
+                    urlLinks.add(url);
+                });
+            }
+            //获取详情
+//            List<Movie> movies = new ArrayList<>();
+            if(!urlLinks.isEmpty()){
+                urlLinks.parallelStream().forEach(x->{
+                    Movie movie = getMovieDetailInfo(x);
+                    if(null != movie){
+                        neo4jService.insertMovie(movie);
+                    }
+                });
+            }
+            //点击更多
+            webDriver.findElement(By.xpath("a[@class='more']")).click();
+//            List<WebElement> webElements = webDriver.findElements(By.xpath("//div[@class='list-wp']//div[@class='list']//a[@class='item']"));
+
+
+        }catch (Exception ex){
+            logger.error(ExceptionUtils.getStackTrace(ex));
+            try{
+                //指定了OutputType.FILE做为参数传递给getScreenshotAs()方法，其含义是将截取的屏幕以文件形式返回。
+                File srcFile = ((TakesScreenshot)webDriver).getScreenshotAs(OutputType.FILE);
+                //利用FileUtils工具类的copyFile()方法保存getScreenshotAs()返回的文件对象
+                String curTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));  //当前时间
+                String screenshotsFile = new File("").getParentFile().getParent() + System.getProperty(File.separator,"/") + curTime + "_screenshots.png";
+                File file = CommonUtil.createFile(screenshotsFile);
+                if(file.isFile()){
+                    FileUtils.copyFile(srcFile, file);
+                }
+            }catch (Exception e){
+                logger.error(ExceptionUtils.getStackTrace(e));
+            }
+        }
+        webDriver.close();
+        return urlLinks;
+
+    }
+
+
+
+    //多线程计算
+    private void multiThreadGetUrlLinks(final Set<String> urlLinks){
+        if(null != urlLinks){
+            List<String> list = new ArrayList<>(urlLinks);
+            int threadNum = (int)Math.ceil(urlLinks.size()/10);
+            ListeningExecutorService executorService = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threadNum));
+            for(int i = 0;i< threadNum; i++){
+                int end = 10*(i+1) > urlLinks.size()? urlLinks.size():10*(i+1);
+                executorService.submit(new MovieDetailTask(list.subList(i*10,end)));
+            }
+        }
+    }
 
     @Override
     public Movie getMovieDetailInfo(String url) {

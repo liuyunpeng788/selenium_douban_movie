@@ -11,6 +11,7 @@ import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -101,5 +102,21 @@ public class CommonUtil {
         }
         movie.setReleasePlaceShips(releasePlaceShips);
 
+    }
+
+
+    /**
+     * 创建文件
+     * @param filename 文件名
+     * @return
+     * @throws Exception
+     */
+    public static File createFile(String filename) throws Exception{
+        File file = new File(filename);
+        if(!file.getParentFile().exists()){
+            file.getParentFile().createNewFile();
+            file.createNewFile();
+        }
+        return file;
     }
 }
