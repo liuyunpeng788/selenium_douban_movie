@@ -119,20 +119,6 @@ public class CommonUtil {
     }
 
 
-    /**
-     * 创建文件
-     * @param filename 文件名
-     * @return
-     * @throws Exception
-     */
-    public static File createFile(String filename) throws Exception{
-        File file = new File(filename);
-        if(!file.getParentFile().exists()){
-            file.getParentFile().createNewFile();
-            file.createNewFile();
-        }
-        return file;
-    }
 
     /**
      * 当发生异常时保存页面截图
