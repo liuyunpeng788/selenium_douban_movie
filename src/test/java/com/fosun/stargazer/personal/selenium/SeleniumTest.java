@@ -28,7 +28,7 @@ public class SeleniumTest {
     @Test
     public void seleniumData(){
         try{
-            Movie movie = seleniumService.getMovieDetailInfo("https://movie.douban.com/subject/26985127/?tag=%E7%83%AD%E9%97%A8&from=gaia_video");
+            Movie movie = seleniumService.getMovieDetailInfo("https://movie.douban.com/subject/26925317/?tag=%E7%83%AD%E9%97%A8&from=gaia_video");
             if(null == movie){
                 System.out.println("movie is null");
                 return ;
@@ -43,7 +43,7 @@ public class SeleniumTest {
     @Test
     public void getMovieLinksTest(){
         String originUrl = "https://movie.douban.com/explore";
-        seleniumService.getMovieLinks(originUrl);
+        seleniumService.getMovies(originUrl,20,20);
     }
 
 }

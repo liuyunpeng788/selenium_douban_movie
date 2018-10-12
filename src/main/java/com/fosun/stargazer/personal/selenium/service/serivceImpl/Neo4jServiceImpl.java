@@ -41,6 +41,12 @@ public class Neo4jServiceImpl implements Neo4jService{
     @Autowired
     private DirectorRepository directorRepository;
 
+    @Autowired
+    private MovieTypeShipRepository movieTypeShipRepository;
+
+    @Autowired
+    private ActorShipRepository actorShipRepository;
+
     @Override
     public Long insertMovie(final Movie movie){
         Long id = -1L;
@@ -76,6 +82,8 @@ public class Neo4jServiceImpl implements Neo4jService{
                 if(null != actor && null != actor.getChName()){
                     Actor newActor = actorRepository.queryActorsByNameAndAlias(actor.getChName(),actor.getEngName());
                     updateId(actor,newActor);
+                    ActorShip newActorShip = actorShipRepository.getActorShipByActorAndMovie(actor.getChName(),movie.getName(),movie.getYear()); //更新角色id
+                    updateId(x,newActorShip);
                 }
             });
         }
@@ -121,8 +129,11 @@ public class Neo4jServiceImpl implements Neo4jService{
                 MovieType movieType = x.getMovieType();
                 if(null != movieType && null != movieType.getName()){
                     MovieType newMovieType = movieTypeRepository.queryMovieTypeByName(movieType.getName());
-                    if(null != newMovieType){ movieType.setId(newMovieType.getId());}
+                    updateId(newMovieType,newMovieType);
                 }
+                //添加更新id
+                MovieTypeShip newMovieTypeShip = movieTypeShipRepository.getMovieTypeShipByMovieAndMovieType(movie.getName(),movie.getYear(),movieType.getName());
+                updateId(x,newMovieTypeShip);
             });
         }
 

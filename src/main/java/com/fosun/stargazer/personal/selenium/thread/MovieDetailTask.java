@@ -6,6 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.util.List;
 import java.util.concurrent.Callable;
 
+/**
+ * @deprecated
+ * 多线程处理：暂时没有什么用
+ */
 public class MovieDetailTask implements Callable<List<String>>{
 
     @Autowired

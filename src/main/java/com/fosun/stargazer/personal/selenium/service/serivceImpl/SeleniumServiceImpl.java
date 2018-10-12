@@ -9,21 +9,20 @@ import com.fosun.stargazer.personal.selenium.service.Neo4jService;
 import com.fosun.stargazer.personal.selenium.service.SeleniumService;
 import com.fosun.stargazer.personal.selenium.thread.MovieDetailTask;
 import com.fosun.stargazer.personal.selenium.util.CommonUtil;
+import com.fosun.stargazer.personal.selenium.util.SeleniumUtil;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.openqa.selenium.*;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -37,60 +36,84 @@ public class SeleniumServiceImpl implements SeleniumService {
     @Autowired
     private Neo4jService neo4jService;
 
+    /**
+     * 获取指定页的电影链接地址
+     * @param originUrl 起始爬虫地址
+     * @param startNo 起始页号
+     * @param pageSize 页面电影数
+     */
     @Override
-    public Set<String> getMovieLinks(String originUrl) {
+    public void getMovies(String originUrl,Integer startNo,Integer pageSize) {
+        startNo = null == startNo? 1:startNo;  //起始电影编号
+        pageSize = null == pageSize? 20:pageSize;
+        logger.info("startNo:" + startNo +",pageSize:" + pageSize);
         WebDriver webDriver = new ChromeDriver();
-        Set<String> urlLinks = new HashSet<>();
+
+
         try{
             webDriver.get(originUrl);
             webDriver.manage().timeouts().implicitlyWait(20, TimeUnit.SECONDS);
-            List<WebElement> webElements = webDriver.findElements(By.xpath("//div[@class='list-wp']//div[@class='list']//a[@class='item']"));
-            while(null != webElements){
-                webElements.parallelStream().forEach(x->{
-                    String url = x.getAttribute("href");
-                    System.out.println(url);
-                    urlLinks.add(url);
-                });
+
+            if(startNo%(pageSize+1)== 0){
+                boolean res = getMore(webDriver,startNo,pageSize);
+                if (!res){
+                    logger.error("获取更多影片信息失败，直接退出");
+                    webDriver.close();
+                    return;
+                }
             }
-            //获取详情
-//            List<Movie> movies = new ArrayList<>();
-            if(!urlLinks.isEmpty()){
-                urlLinks.parallelStream().forEach(x->{
-                    Movie movie = getMovieDetailInfo(x);
-                    if(null != movie){
-                        neo4jService.insertMovie(movie);
+            String preHrefIndex = "//div[@class='list-wp']//div[@class='list']//a[@class='item']";
+            String hrefIndex = preHrefIndex + "["+ startNo +"]";
+            WebElement webElement = SeleniumUtil.getWebElementByWebDriver(webDriver,By.xpath(hrefIndex));  //如果找不到会直接抛异常
+            while(null != webElement){
+                String url = SeleniumUtil.getWebElementAttributeValue(webElement,"href");
+                //处理电影
+                Movie movie = getMovieDetailInfo(url);
+                if(null != movie){
+                    neo4jService.insertMovie(movie);
+                }
+                startNo++;
+                logger.info("startNo:" + startNo + ", url:" + url );
+
+                if(startNo%(pageSize+1)== 0){
+                    if(getMore(webDriver,startNo,pageSize)){
+                        logger.error("获取更多影片信息失败，结束此次循环");
+                        break;
                     }
-                });
+                }
+                hrefIndex = preHrefIndex + "["+ startNo +"]";
+                webElement = SeleniumUtil.getWebElementByWebDriver( webDriver,By.xpath(hrefIndex));
             }
-            //点击更多
-            webDriver.findElement(By.xpath("a[@class='more']")).click();
-//            List<WebElement> webElements = webDriver.findElements(By.xpath("//div[@class='list-wp']//div[@class='list']//a[@class='item']"));
-
-
         }catch (Exception ex){
             logger.error(ExceptionUtils.getStackTrace(ex));
-            try{
-                //指定了OutputType.FILE做为参数传递给getScreenshotAs()方法，其含义是将截取的屏幕以文件形式返回。
-                File srcFile = ((TakesScreenshot)webDriver).getScreenshotAs(OutputType.FILE);
-                //利用FileUtils工具类的copyFile()方法保存getScreenshotAs()返回的文件对象
-                String curTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"));  //当前时间
-                String screenshotsFile = new File("").getParentFile().getParent() + System.getProperty(File.separator,"/") + curTime + "_screenshots.png";
-                File file = CommonUtil.createFile(screenshotsFile);
-                if(file.isFile()){
-                    FileUtils.copyFile(srcFile, file);
-                }
-            }catch (Exception e){
-                logger.error(ExceptionUtils.getStackTrace(e));
-            }
+            CommonUtil.saveScreenshot(webDriver);
+        }finally {
+            webDriver.close();
         }
-        webDriver.close();
-        return urlLinks;
 
     }
 
 
+    /**
+     * 点击获取更多
+     */
+    private boolean getMore(WebDriver webDriver,Integer startNo,Integer pageSize ){
+        startNo = null == startNo? 1:startNo;  //起始电影编号
+        pageSize = null == pageSize? 20:pageSize;
+        boolean res = true;
+        //点击获取更多
+       WebElement webElement = SeleniumUtil.getWebElementByWebDriver(webDriver,By.xpath("//a[@class='more']"));
+        if(null  != webElement){
+            webElement.click();
+        }else{
+            logger.error("当前page点击获取更多失败,pageNo:"+ (startNo%pageSize + 1));
+            res = false;
+        }
+        return res;
+    }
 
-    //多线程计算
+    //多线程计算 ，其实没有啥用
+    @Deprecated
     private void multiThreadGetUrlLinks(final Set<String> urlLinks){
         if(null != urlLinks){
             List<String> list = new ArrayList<>(urlLinks);
@@ -117,7 +140,11 @@ public class SeleniumServiceImpl implements SeleniumService {
         try{
             //访问站点 或者使用 webDriver.navigate().to(url);
             webDriver.get(url);
-            WebElement element = webDriver.findElement(By.xpath("//div[@id='content']")).findElement(By.tagName("h1"));
+            WebElement element = SeleniumUtil.getWebElementByWebDriver(webDriver,By.xpath("//div[@id='content']"),By.tagName("h1"));
+            if(null == element){
+                logger.error( "获取电影信息失败，url:" + url);
+                return null;
+            }
             //获取电影名
             String movieName = element.getText();
             logger.info("movie name :" + movieName);
@@ -126,7 +153,7 @@ public class SeleniumServiceImpl implements SeleniumService {
             movie.setName(arr[0]); //电影名
             if(StringUtils.isNotBlank(arr[1])){ movie.setYear(Integer.valueOf(arr[1]));  }//电影的发行年份
 
-            String infos = element.findElement(By.xpath("//div[@id='info']")).getText();
+            String infos = SeleniumUtil.getWebElementText(element,By.xpath("//div[@id='info']"));
             if(StringUtils.isNotBlank(infos)){
                 for(String line : infos.split("\n")){
                     if(StringUtils.isNotBlank(line)){
@@ -150,7 +177,7 @@ public class SeleniumServiceImpl implements SeleniumService {
                 }
             }
 
-            String scoreDetail = element.findElement(By.xpath("//div[@class='ratings-on-weight']")).getText();
+            String scoreDetail = SeleniumUtil.getWebElementText (element,By.xpath("//div[@class='ratings-on-weight']"));
             Pattern newPatten = Pattern.compile("(\\d+星)\\D+(\\d+[.]?\\d+%)");
             Matcher newMatcher = newPatten.matcher(scoreDetail);
             String detail = "";
@@ -161,8 +188,8 @@ public class SeleniumServiceImpl implements SeleniumService {
                 movie.setScoreDetail(detail.substring(0,detail.length()-1));  //评分详情
             }
 
-            String score = element.findElement(By.xpath("//div[@class='rating_self clearfix']//strong[@class='ll rating_num']")).getText();
-            String num =element.findElement(By.xpath("//div[@class='rating_sum']//span[@property='v:votes']")).getText(); //评价的人数
+            String score = SeleniumUtil.getWebElementText (element,By.xpath("//div[@class='rating_self clearfix']//strong[@class='ll rating_num']"));
+            String num = SeleniumUtil.getWebElementText (element,By.xpath("//div[@class='rating_sum']//span[@property='v:votes']")); //评价的人数
             movie.setScore(StringUtils.isNotBlank(score)? Double.valueOf(score):0.0);
             movie.setCommentNumber(StringUtils.isNotBlank(num)? Integer.valueOf(num):0);
 
@@ -174,10 +201,10 @@ public class SeleniumServiceImpl implements SeleniumService {
 
             if(null != elementList){
                 elementList.parallelStream().forEach(x->{
-                    String roleName = x.findElement(By.tagName("h2")).getText();
+                    String roleName =SeleniumUtil.getWebElementText(x,By.tagName("h2"));
                     if(roleName.contains("导演")){
-                        String name = x.findElement(By.cssSelector(".info .name")).getText(); //人名
-                        String works = x.findElement(By.cssSelector(".info .works")).getText(); //代表作
+                        String name = SeleniumUtil.getWebElementText(x,By.cssSelector(".info .name")); //人名
+                        String works = SeleniumUtil.getWebElementText(x,By.cssSelector(".info .works")); //代表作
 
                         Director director = new Director();
                         director.setChName(name.split(" ",2)[0]); // limit 表示分隔成几部分
@@ -191,12 +218,12 @@ public class SeleniumServiceImpl implements SeleniumService {
                         List<WebElement> actorList =  x.findElements(By.cssSelector(".celebrities-list  >.celebrity "));
                         if(null != actorList){
                             actorList.parallelStream().forEach(actorInfo->{
-                                String name = actorInfo.findElement(By.cssSelector(".info .name")).getText(); //人名
-                                String role = actorInfo.findElement(By.cssSelector(".info .role")).getText(); //角色
-                                String works = actorInfo.findElement(By.cssSelector(".info .works")).getText(); //代表作
-                                if(role.contains("饰")){ //如果有角色
-                                    role = role.substring(role.indexOf("饰")+1,role.lastIndexOf(")")).trim(); //提取扮演的角色
-                                }
+                                String name = SeleniumUtil.getWebElementText(actorInfo,By.cssSelector(".info .name"));//人名
+                                String role = SeleniumUtil.getWebElementText(actorInfo,By.cssSelector(".info .role")); //角色
+                                String works =SeleniumUtil.getWebElementText(actorInfo,By.cssSelector(".info .works")); //代表作
+                                if(StringUtils.isNotBlank(role) && role.contains("饰")){ //如果有角色
+                                     role = role.replaceAll("[()（）]","").trim();
+                                 }
 
                                 Actor actor = new Actor();
                                 actor.setChName( name.split(" ",2)[0]);
@@ -220,8 +247,8 @@ public class SeleniumServiceImpl implements SeleniumService {
 
                         if(null != writerList){
                             writerList.parallelStream().forEach(writerInfo->{
-                                String name = writerInfo.findElement(By.cssSelector(".info >.name")).getText(); //人名
-                                String works = writerInfo.findElement(By.cssSelector(".info >.works")).getText(); //代表作
+                                String name = SeleniumUtil.getWebElementText(writerInfo,By.cssSelector(".info >.name")); //人名
+                                String works = SeleniumUtil.getWebElementText(writerInfo,By.cssSelector(".info >.works")); //代表作
                                 Writer writer = new Writer();
                                 writer.setChName(name.split(" ",2)[0]);
                                 writer.setEngName(name.split(" ",2)[1]);
@@ -244,57 +271,4 @@ public class SeleniumServiceImpl implements SeleniumService {
     }
 
 
-    public static void main(String[] args){
-        String scoreDetail= "5星\n13.3%\n4星\n3.2%\n3星\n34.8%\n2星\n6.8%\n1星\n18%";
-        String[] scores = scoreDetail.split("\n");
-        String res = "";
-        for(int i = 0; i<scores.length;i++){
-            if(i%2==0){
-                res += scores[i]+":";
-            }else{
-                res += scores[i] + ",";
-            }
-        }
-        System.out.println("res:" + res.substring(0,res.length()-1));
-        Pattern newPatten = Pattern.compile("(\\d+星)\\D+(\\d+[.]?\\d+%)");
-        Matcher newMatcher = newPatten.matcher(scoreDetail);
-        String str = "";
-        while(newMatcher.find()){
-            str += newMatcher.group(1) + ":" + newMatcher.group(2)+",";
-        }
-        System.out.println("pattern str:" + str);
-
-
-        String name = "adb dd ee";
-        System.out.println(name.split(" ",2)[0] + "----" + name.split(" ",2)[1]);
-
-
-        String betterThan = "好于 61% 喜剧片\n好于 39% 剧情片";
-        if(StringUtils.isNotBlank(betterThan)){
-//             Pattern doublePattern = Pattern.compile("\\D+(\\d+[.]?\\d+%)\\D+("+ "剧情"+")");
-            Pattern doublePattern = Pattern.compile("\\D+([0-9.%]+)\\D+("+ "剧情"+")");
-             Matcher matcher = doublePattern.matcher(betterThan);
-            if(matcher.find()){
-                System.out.println(matcher.group(1));
-            }
-        }
-
-        String role = "演员 Actor/Actress (饰 马进)";
-        String works = "代表作：人再囧途之泰囧/西游降魔篇".replace("：",":");
-        role = role.substring(role.indexOf("饰")+1,role.lastIndexOf(")")).trim();
-        System.out.println("works:" + works.split(":")[1]);
-        System.out.println("role:" + role);
-        String movieName = "血战硫磺岛(2013)";
-        String pattern = "(\\D*)\\((\\d{4})(.*)";
-        // 创建 Pattern 对象
-        Pattern r = Pattern.compile(pattern);
-        // 现在创建 matcher 对象
-        Matcher m = r.matcher(movieName);
-        if(m.find()) {
-            movieName = m.group(1);
-            String year = m.group(2);
-            System.out.println("movieName:" + movieName + ", year:" + year);
-        }
-
-    }
 }
