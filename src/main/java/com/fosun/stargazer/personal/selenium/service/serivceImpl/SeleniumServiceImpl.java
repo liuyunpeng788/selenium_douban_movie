@@ -53,15 +53,16 @@ public class SeleniumServiceImpl implements SeleniumService {
         try{
             webDriver.get(originUrl);
             webDriver.manage().timeouts().implicitlyWait(20, TimeUnit.SECONDS);
-
-            if(startNo%(pageSize+1)== 0){
-                boolean res = getMore(webDriver,startNo,pageSize);
-                if (!res){
+            for(int i = 1;i<startNo%pageSize && startNo > pageSize;i++){
+                if (!getMore(webDriver,startNo,pageSize)){
                     logger.error("获取更多影片信息失败，直接退出");
                     webDriver.close();
                     return;
+                }else{
+                    startNo += pageSize;
                 }
             }
+
             String preHrefIndex = "//div[@class='list-wp']//div[@class='list']//a[@class='item']";
             String hrefIndex = preHrefIndex + "["+ startNo +"]";
             WebElement webElement = SeleniumUtil.getWebElementByWebDriver(webDriver,By.xpath(hrefIndex));  //如果找不到会直接抛异常
@@ -76,7 +77,7 @@ public class SeleniumServiceImpl implements SeleniumService {
                 logger.info("startNo:" + startNo + ", url:" + url );
 
                 if(startNo%(pageSize+1)== 0){
-                    if(getMore(webDriver,startNo,pageSize)){
+                    if( !getMore(webDriver,startNo,pageSize)){
                         logger.error("获取更多影片信息失败，结束此次循环");
                         break;
                     }

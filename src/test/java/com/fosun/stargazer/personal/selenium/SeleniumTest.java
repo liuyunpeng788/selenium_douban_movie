@@ -43,7 +43,7 @@ public class SeleniumTest {
     @Test
     public void getMovieLinksTest(){
         String originUrl = "https://movie.douban.com/explore";
-        seleniumService.getMovies(originUrl,20,20);
+        seleniumService.getMovies(originUrl,1,20);
     }
 
 }
